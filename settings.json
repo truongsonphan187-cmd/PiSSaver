@@ -1,0 +1,10 @@
+{
+    "image_path": "assets/custom.jpg",
+    "led_size": 10,
+    "led_spacing_ratio": 0.84,
+    "wave_speed": 1.2,
+    "wave_negative_dim": 0.28,
+    "mouse_move_threshold": 15,
+    "run_on_startup": false,
+    "fps_target": 60
+}
