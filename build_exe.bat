@@ -1,11 +1,11 @@
 @echo off
 echo ===================================================
-echo [CusSSaver] Dang dong goi ung dung ra file .exe...
+echo [PiSSaver] Dang dong goi ung dung ra file .exe...
 echo ===================================================
 
 python -m PyInstaller --clean --noconsole --onefile ^
     --icon "assets/icon.ico" ^
-    --name "CusSSaver" ^
+    --name "PiSSaver" ^
     --add-data "assets;assets" ^
     --add-data "src/shaders;shaders" ^
     --add-data "src/shaders;src/shaders" ^
@@ -26,6 +26,6 @@ python -m PyInstaller --clean --noconsole --onefile ^
 
 echo.
 echo ===================================================
-echo [CusSSaver] Hoan tat! File chay: dist\CusSSaver.exe
+echo [PiSSaver] Hoan tat! File chay: dist\PiSSaver.exe
 echo ===================================================
 pause

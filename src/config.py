@@ -8,7 +8,7 @@ import json
 import logging
 import winreg
 
-APP_NAME = "CusSSaver"
+APP_NAME = "PiSSaver"
 DEFAULT_CONFIG = {
     "image_path": "assets/custom.jpg",
     "led_size": 10,

@@ -1,4 +1,4 @@
-# CusSSaver - Custom Circular LED Matrix Screensaver
+# PiSSaver - Custom Circular LED Matrix Screensaver
 
 > **Ứng dụng Screensaver ma trận LED tròn dành riêng cho Windows.**  
 > Tối ưu hiệu năng tuyệt đối: **0.0% CPU khi ẩn khay hệ thống**, bung Fullscreen tức thì trên tất cả màn hình, ngăn Windows Sleep và hiệu ứng lướt sóng chéo nghệ thuật.
@@ -33,7 +33,7 @@
 ### Cách 1: Chạy trực tiếp file Release (.exe)
 Vào thư mục `dist\` và khởi chạy:
 ```text
-dist\CusSSaver.exe
+dist\PiSSaver.exe
 ```
 * Ứng dụng sẽ xuất hiện ngay dưới Khay hệ thống (System Tray).
 * **Click chuột trái** vào icon để bật Screensaver ngay.
@@ -44,14 +44,14 @@ Chạy file script:
 ```text
 build_exe.bat
 ```
-File thực thi mới sẽ được xuất ra tại `dist\CusSSaver.exe`.
+File thực thi mới sẽ được xuất ra tại `dist\PiSSaver.exe`.
 
 ---
 
 ## 🖼️ HƯỚNG DẪN THAY ĐỔI ẢNH NỀN
 
 * **Cách 1 (Nhanh nhất qua giao diện):**
-  1. Click chuột phải vào biểu tượng CusSSaver ở khay hệ thống.
+  1. Click chuột phải vào biểu tượng PiSSaver ở khay hệ thống.
   2. Chọn **"🖼️ Chọn ảnh nguồn..."**.
   3. Chọn bất kỳ bức ảnh nào (`.jpg`, `.png`, `.webp`, `.bmp`). Cài đặt sẽ được lưu tự động.
 * **Cách 2 (Copy đè file):**
@@ -83,12 +83,12 @@ Khi click chuột phải vào icon ở khay hệ thống:
 ## 🛠️ CẤU TRÚC MÃ NGUỒN
 
 ```text
-CusSSaver/
+PiSSaver/
 ├── assets/                     # Tài nguyên ảnh mặc định & icon
 │   ├── custom.jpg              # Ảnh mẫu phong cách MJ Invincible
 │   └── icon.ico                # Icon khay hệ thống
 ├── dist/                       # Bản phát hành chạy độc lập
-│   ├── CusSSaver.exe           # File chạy chính thức cho người dùng
+│   ├── PiSSaver.exe            # File chạy chính thức cho người dùng
 │   ├── assets/                 # Thư mục ảnh đi kèm file .exe
 │   └── settings.json           # File cấu hình
 ├── src/

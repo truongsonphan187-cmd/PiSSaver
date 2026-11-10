@@ -1,5 +1,5 @@
 """
-Điểm khởi động chính của ứng dụng CusSSaver.
+Điểm khởi động chính của ứng dụng PiSSaver.
 Khởi tạo Single Instance Mutex, System Tray và chạy ngầm 0% CPU.
 """
 
@@ -24,8 +24,8 @@ from src.tray import SystemTrayManager
 
 
 def ensure_single_instance():
-    """Đảm bảo chỉ có duy nhất một tiến trình CusSSaver chạy ngầm dưới System Tray."""
-    mutex_name = "Global\\CusSSaver_SingleInstance_UniqueMutex_2026"
+    """Đảm bảo chỉ có duy nhất một tiến trình PiSSaver chạy ngầm dưới System Tray."""
+    mutex_name = "Global\\PiSSaver_SingleInstance_UniqueMutex_2026"
     ERROR_ALREADY_EXISTS = 183
     
     kernel32 = ctypes.windll.kernel32
@@ -33,7 +33,7 @@ def ensure_single_instance():
     last_error = kernel32.GetLastError()
     
     if last_error == ERROR_ALREADY_EXISTS:
-        logging.warning("Một phiên bản của CusSSaver đã đang chạy dưới System Tray!")
+        logging.warning("Một phiên bản của PiSSaver đã đang chạy dưới System Tray!")
         # Đã có app chạy, thoát instance thứ hai
         sys.exit(0)
     return handle
@@ -43,7 +43,7 @@ def main():
     # Cấu hình logging
     log_dir = os.path.join(get_app_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "cus_saver.log")
+    log_file = os.path.join(log_dir, "pis_saver.log")
     
     logging.basicConfig(
         level=logging.INFO,
@@ -53,7 +53,7 @@ def main():
             logging.StreamHandler(sys.stdout)
         ]
     )
-    logging.info("=== Khởi động CusSSaver ===")
+    logging.info("=== Khởi động PiSSaver ===")
 
     # Giữ Mutex tránh chạy trùng lặp
     _mutex_handle = ensure_single_instance()
@@ -75,7 +75,7 @@ def main():
     tray_mgr = SystemTrayManager(screensaver_mgr, config)
     tray_mgr.show()
 
-    logging.info("CusSSaver đã sẵn sàng dưới System Tray. Trạng thái CPU = 0.0%.")
+    logging.info("PiSSaver đã sẵn sàng dưới System Tray. Trạng thái CPU = 0.0%.")
 
     # Bắt đầu vòng lặp sự kiện
     sys.exit(app.exec())

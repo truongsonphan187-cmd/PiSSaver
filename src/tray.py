@@ -34,7 +34,7 @@ class SystemTrayManager(QObject):
         
         self.icon = QIcon(icon_path)
         self.tray = QSystemTrayIcon(self.icon)
-        self.tray.setToolTip("CusSSaver - Circular LED Matrix Screensaver\nClick chuột trái để bật screensaver")
+        self.tray.setToolTip("PiSSaver - Circular LED Matrix Screensaver\nClick chuột trái để bật screensaver")
         
         # Khởi tạo Menu chuột phải
         self.menu = QMenu()
@@ -131,7 +131,7 @@ class SystemTrayManager(QObject):
             self.config["image_path"] = file_path
             save_config(self.config)
             self.tray.showMessage(
-                "CusSSaver",
+                "PiSSaver",
                 f"Đã cập nhật ảnh mới: {os.path.basename(file_path)}",
                 QSystemTrayIcon.MessageIcon.Information,
                 2000

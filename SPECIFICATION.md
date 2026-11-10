@@ -1,11 +1,11 @@
 # TÀI LIỆU ĐẶC TẢ KỸ THUẬT VÀ THIẾT KẾ SẢN PHẨM (SRS) - BẢN REVISED V1.1
-## DỰ ÁN: CUSTOM CIRCULAR LED MATRIX SCREENSAVER (CusSSaver)
+## DỰ ÁN: CUSTOM CIRCULAR LED MATRIX SCREENSAVER (PiSSaver)
 
 ---
 
 | **Thuộc tính** | **Nội dung** |
 | :--- | :--- |
-| **Dự án** | CusSSaver (Custom LED Matrix Screensaver) |
+| **Dự án** | PiSSaver (Custom LED Matrix Screensaver) |
 | **Vai trò** | Senior Product Manager & Tech Lead |
 | **Khách hàng / Stakeholder** | The Boss |
 | **Trạng thái** | Revised according to Boss Feedback - Pending Final Approval |
@@ -16,7 +16,7 @@
 
 ## 1. TỔNG QUAN SẢN PHẨM (EXECUTIVE SUMMARY)
 
-**CusSSaver** là ứng dụng Screensaver phong cách **Circular LED Matrix** (ma trận đèn LED tròn) cao cấp, được thiết kế chuyên biệt cho Windows theo triết lý:
+**PiSSaver** là ứng dụng Screensaver phong cách **Circular LED Matrix** (ma trận đèn LED tròn) cao cấp, được thiết kế chuyên biệt cho Windows theo triết lý:
 1. **Hoàn toàn tàng hình khi Idle:** Nằm gọn gàng dưới System Tray, tiêu hao `CPU = 0.0%`, RAM tối thiểu, không ảnh hưởng đến bất kỳ tác vụ nào của hệ thống.
 2. **Kích hoạt tức thì (On-Demand):** Một click chuột trái vào Tray icon là bung Fullscreen trên **toàn bộ các màn hình**.
 3. **Chống ngủ Windows (Keep-Awake):** Duy trì màn hình sáng liên tục trong suốt thời gian screensaver chạy.
