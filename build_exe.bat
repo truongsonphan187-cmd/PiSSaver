@@ -1,7 +1,11 @@
 @echo off
 echo ===================================================
-echo [PiSSaver] Dang dong goi ung dung ra file .exe...
+echo [PiSSaver] Packaging standalone executable (.exe)...
 echo ===================================================
+
+if exist "dist\PiSSaver.exe" (
+    del /f /q "dist\PiSSaver.exe" 2>nul
+)
 
 python -m PyInstaller --clean --noconsole --onefile ^
     --icon "assets/icon.ico" ^
@@ -26,6 +30,5 @@ python -m PyInstaller --clean --noconsole --onefile ^
 
 echo.
 echo ===================================================
-echo [PiSSaver] Hoan tat! File chay: dist\PiSSaver.exe
+echo [PiSSaver] Done! Executable is at: dist\PiSSaver.exe
 echo ===================================================
-pause

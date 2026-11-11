@@ -1,6 +1,6 @@
 """
-Module quản lý cửa sổ Screensaver và Render Engine LED Matrix trên OpenGL.
-Hỗ trợ hiển thị trên tất cả các màn hình, chống rung chuột và bắt sự kiện bàn phím.
+Screensaver window management and OpenGL-accelerated LED Matrix renderer.
+Supports multi-monitor setups, smooth ocean swell animation, and robust mouse/keyboard dismissal.
 """
 
 import os
@@ -10,17 +10,18 @@ import math
 import logging
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QTimer, QPointF
+from PyQt6.QtCore import Qt, QTimer, QPointF, QObject, QEvent
 from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from PyQt6.QtGui import QScreen, QCursor
 from OpenGL import GL
 from PIL import Image
+# Allow loading large high-resolution images without DecompressionBombError
+Image.MAX_IMAGE_PIXELS = None
 
 import numpy as np
 from src.config import get_app_dir, resolve_image_path
 from src import power
-
 
 DEFAULT_VERTEX_SHADER = """#version 330 core
 layout(location = 0) in vec2 aPos;
@@ -46,19 +47,32 @@ void main() {
 
     float screen_ar = u_resolution.x / u_resolution.y;
     float image_ar = u_image_size.x / u_image_size.y;
+    float ar_ratio = screen_ar / image_ar;
     
     vec2 draw_size;
     vec2 draw_offset;
     
-    if (abs(screen_ar - image_ar) < 0.02) {
-        draw_size = u_resolution;
-        draw_offset = vec2(0.0, 0.0);
-    } else if (screen_ar > image_ar) {
-        draw_size = vec2(u_resolution.y * image_ar, u_resolution.y);
-        draw_offset = vec2((u_resolution.x - draw_size.x) * 0.5, 0.0);
+    // Smart Adaptive Crop/Fit:
+    // Only crop/fill when aspect ratios are close (e.g. 16:9 on 16:10 or vice-versa) for 100% borderless display.
+    // For 1:1 square artwork (e.g. MJ Invincible) or 4:3, use Aspect Fit centered to avoid clipping the subject.
+    bool should_crop_fill = (ar_ratio >= 0.85 && ar_ratio <= 1.18);
+
+    if (should_crop_fill) {
+        if (screen_ar > image_ar) {
+            draw_size = vec2(u_resolution.x, u_resolution.x / image_ar);
+            draw_offset = vec2(0.0, (u_resolution.y - draw_size.y) * 0.5);
+        } else {
+            draw_size = vec2(u_resolution.y * image_ar, u_resolution.y);
+            draw_offset = vec2((u_resolution.x - draw_size.x) * 0.5, 0.0);
+        }
     } else {
-        draw_size = vec2(u_resolution.x, u_resolution.x / image_ar);
-        draw_offset = vec2(0.0, (u_resolution.y - draw_size.y) * 0.5);
+        if (screen_ar > image_ar) {
+            draw_size = vec2(u_resolution.y * image_ar, u_resolution.y);
+            draw_offset = vec2((u_resolution.x - draw_size.x) * 0.5, 0.0);
+        } else {
+            draw_size = vec2(u_resolution.x, u_resolution.x / image_ar);
+            draw_offset = vec2(0.0, (u_resolution.y - draw_size.y) * 0.5);
+        }
     }
 
     vec2 cell_idx = floor(frag_coord / u_led_size);
@@ -80,15 +94,20 @@ void main() {
         base_color = texture(u_texture, uv).rgb;
     }
 
+    // Majestic Ocean Swell wave effect (3x Wavelength: 255.0 LED dots)
     float wave_factor = 1.0;
     if (u_wave_speed > 0.001) {
         float wave_coord = cell_idx.x + cell_idx.y;
-        float wavelength = 26.0;
-        float phase = (wave_coord / wavelength) * 6.2831853 - (u_time * u_wave_speed * 2.5);
+        float wavelength = 255.0;
+        float phase = (wave_coord / wavelength) * 6.2831853 - (u_time * u_wave_speed * 1.5);
         float s = sin(phase);
-        
-        if (s < 0.0) {
-            wave_factor = 1.0 - u_negative_dim * abs(s);
+
+        if (s >= 0.0) {
+            float crest = smoothstep(0.0, 1.0, s);
+            wave_factor = mix(1.0, 1.15, crest);
+        } else {
+            float trough = smoothstep(0.0, -1.0, s);
+            wave_factor = mix(1.0, 0.42, trough);
         }
     }
 
@@ -109,7 +128,7 @@ void main() {
 
 
 def load_shader_source(filename: str) -> str:
-    """Tải nội dung mã nguồn shader với fallback an toàn tuyệt đối."""
+    """Load shader source file with fallback to embedded defaults."""
     base_dir = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
     candidates = [
         os.path.join(base_dir, "shaders", filename),
@@ -125,28 +144,32 @@ def load_shader_source(filename: str) -> str:
             except Exception:
                 pass
     
-    # Fallback trực tiếp nếu không tìm thấy file trên đĩa
     if "vertex" in filename.lower():
         return DEFAULT_VERTEX_SHADER
     return DEFAULT_FRAGMENT_SHADER
 
 
 class LEDMatrixWidget(QOpenGLWidget):
-    """OpenGL Widget chuyên biệt vẽ Circular LED Matrix kết hợp Shimmer Wave."""
+    """OpenGL Widget rendering the circular LED matrix with wave animation."""
 
-    def __init__(self, config: dict, parent=None):
+    def __init__(self, config: dict, parent_window, parent=None):
         super().__init__(parent)
         self.config = config
+        self.parent_window = parent_window
         self.start_time = time.perf_counter()
         
-        # Biến OpenGL
+        # OpenGL references
         self.shader_program = 0
         self.texture_id = 0
         self.vao = 0
         self.vbo = 0
         self.image_size = (1920, 1080)
         
-        # Timer cập nhật 60 FPS
+        # Enable mouse tracking to capture movements over this widget
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.BlankCursor)
+
+        # 60 FPS Render Timer
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update)
         target_fps = self.config.get("fps_target", 60)
@@ -156,7 +179,7 @@ class LEDMatrixWidget(QOpenGLWidget):
     def initializeGL(self):
         GL.glClearColor(0.02, 0.02, 0.025, 1.0)
         
-        # 1. Biên dịch Shaders
+        # Compile Shaders
         v_src = load_shader_source("vertex_shader.glsl")
         f_src = load_shader_source("fragment_shader.glsl")
         
@@ -165,14 +188,14 @@ class LEDMatrixWidget(QOpenGLWidget):
         GL.glCompileShader(vs)
         if not GL.glGetShaderiv(vs, GL.GL_COMPILE_STATUS):
             err = GL.glGetShaderInfoLog(vs).decode()
-            logging.error(f"Lỗi biên dịch Vertex Shader: {err}")
+            logging.error(f"Vertex Shader compilation error: {err}")
 
         fs = GL.glCreateShader(GL.GL_FRAGMENT_SHADER)
         GL.glShaderSource(fs, f_src)
         GL.glCompileShader(fs)
         if not GL.glGetShaderiv(fs, GL.GL_COMPILE_STATUS):
             err = GL.glGetShaderInfoLog(fs).decode()
-            logging.error(f"Lỗi biên dịch Fragment Shader: {err}")
+            logging.error(f"Fragment Shader compilation error: {err}")
 
         self.shader_program = GL.glCreateProgram()
         GL.glAttachShader(self.shader_program, vs)
@@ -180,12 +203,12 @@ class LEDMatrixWidget(QOpenGLWidget):
         GL.glLinkProgram(self.shader_program)
         if not GL.glGetProgramiv(self.shader_program, GL.GL_LINK_STATUS):
             err = GL.glGetProgramInfoLog(self.shader_program).decode()
-            logging.error(f"Lỗi liên kết Shader Program: {err}")
+            logging.error(f"Shader Program linking error: {err}")
 
         GL.glDeleteShader(vs)
         GL.glDeleteShader(fs)
 
-        # 2. Tạo Fullscreen Quad (Hình chữ nhật phủ toàn màn hình)
+        # Fullscreen quad
         quad_vertices = np.array([
             -1.0, -1.0,
              1.0, -1.0,
@@ -206,20 +229,24 @@ class LEDMatrixWidget(QOpenGLWidget):
         GL.glVertexAttribPointer(0, 2, GL.GL_FLOAT, GL.GL_FALSE, 2 * 4, None)
         GL.glBindVertexArray(0)
 
-        # 3. Nạp ảnh Texture
+        # Load Texture
         self.load_image_texture()
 
     def load_image_texture(self):
         img_path = resolve_image_path(self.config.get("image_path", "assets/custom.jpg"))
         if not os.path.exists(img_path):
-            logging.warning(f"Không tìm thấy ảnh tại {img_path}, tạo ảnh fallback...")
-            # Tạo ảnh mẫu đen trắng tạm
+            logging.warning(f"Image not found at {img_path}, using fallback canvas...")
             img = Image.new("RGB", (1024, 1024), color=(230, 230, 230))
         else:
             try:
                 img = Image.open(img_path).convert("RGB")
+                # Downscale extremely large images (e.g. 16x upscaled) to safe max 3840px
+                max_dim = 3840
+                if img.width > max_dim or img.height > max_dim:
+                    logging.info(f"Image resolution {img.width}x{img.height} is huge; optimizing for GPU texture...")
+                    img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
             except Exception as e:
-                logging.error(f"Không thể đọc file ảnh {img_path}: {e}")
+                logging.error(f"Failed to read image file {img_path}: {e}")
                 img = Image.new("RGB", (1024, 1024), color=(20, 20, 20))
 
         self.image_size = img.size
@@ -241,7 +268,7 @@ class LEDMatrixWidget(QOpenGLWidget):
         )
         GL.glGenerateMipmap(GL.GL_TEXTURE_2D)
         GL.glBindTexture(GL.GL_TEXTURE_2D, 0)
-        logging.info(f"Đã nạp texture ảnh thành công: {img.width}x{img.height}")
+        logging.info(f"Loaded texture successfully: {img.width}x{img.height}")
 
     def resizeGL(self, w: int, h: int):
         dpr = self.devicePixelRatio()
@@ -254,13 +281,11 @@ class LEDMatrixWidget(QOpenGLWidget):
 
         GL.glUseProgram(self.shader_program)
 
-        # Tính toán độ phân giải vật lý thực tế trên màn hình (High-DPI aware)
         dpr = self.devicePixelRatio()
         real_w = float(self.width() * dpr)
         real_h = float(self.height() * dpr)
         elapsed = float(time.perf_counter() - self.start_time)
 
-        # Truyền Uniforms vào GLSL
         loc_res = GL.glGetUniformLocation(self.shader_program, "u_resolution")
         GL.glUniform2f(loc_res, real_w, real_h)
 
@@ -270,7 +295,6 @@ class LEDMatrixWidget(QOpenGLWidget):
         loc_time = GL.glGetUniformLocation(self.shader_program, "u_time")
         GL.glUniform1f(loc_time, elapsed)
 
-        # Kích thước LED scale theo tỉ lệ điểm ảnh vật lý
         led_size = float(self.config.get("led_size", 10)) * dpr
         loc_led = GL.glGetUniformLocation(self.shader_program, "u_led_size")
         GL.glUniform1f(loc_led, led_size)
@@ -284,17 +308,28 @@ class LEDMatrixWidget(QOpenGLWidget):
         loc_dim = GL.glGetUniformLocation(self.shader_program, "u_negative_dim")
         GL.glUniform1f(loc_dim, float(self.config.get("wave_negative_dim", 0.28)))
 
-        # Kích hoạt Texture
         GL.glActiveTexture(GL.GL_TEXTURE0)
         GL.glBindTexture(GL.GL_TEXTURE_2D, self.texture_id)
         loc_tex = GL.glGetUniformLocation(self.shader_program, "u_texture")
         GL.glUniform1i(loc_tex, 0)
 
-        # Vẽ Fullscreen Quad
         GL.glBindVertexArray(self.vao)
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 6)
         GL.glBindVertexArray(0)
         GL.glUseProgram(0)
+
+    # Route child mouse/keyboard events directly to parent window handler
+    def mouseMoveEvent(self, event):
+        self.parent_window.handle_mouse_move(event.globalPosition())
+
+    def mousePressEvent(self, event):
+        self.parent_window.trigger_dismiss("Child mouse click detected")
+
+    def keyPressEvent(self, event):
+        self.parent_window.trigger_dismiss("Child key press detected")
+
+    def wheelEvent(self, event):
+        self.parent_window.trigger_dismiss("Child wheel scroll detected")
 
     def closeEvent(self, event):
         self.timer.stop()
@@ -302,7 +337,7 @@ class LEDMatrixWidget(QOpenGLWidget):
 
 
 class ScreensaverWindow(QWidget):
-    """Cửa sổ Fullscreen không viền hiển thị trên một màn hình chỉ định."""
+    """Borderless fullscreen window displaying on a specific monitor."""
 
     def __init__(self, screen: QScreen, config: dict, dismiss_callback):
         super().__init__()
@@ -310,79 +345,134 @@ class ScreensaverWindow(QWidget):
         self.config = config
         self.dismiss_callback = dismiss_callback
         
+        self.opened_at = time.perf_counter()
         self.initial_mouse_pos: Optional[QPointF] = None
         self.threshold = float(self.config.get("mouse_move_threshold", 15))
 
-        # Thiết lập cửa sổ Fullscreen không viền, TopMost
+        # Frameless, Always on Top, True Top-level Window
         self.setWindowFlags(
+            Qt.WindowType.Window |
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.SubWindow
+            Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
-        
-        # Ẩn con trỏ chuột
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setCursor(Qt.CursorShape.BlankCursor)
         self.setMouseTracking(True)
 
-        # Khởi tạo widget render OpenGL
-        self.gl_widget = LEDMatrixWidget(config, self)
+        self.gl_widget = LEDMatrixWidget(config, self, self)
 
     def show_on_screen(self):
         geo = self.screen_obj.geometry()
         self.setGeometry(geo)
         self.gl_widget.setGeometry(0, 0, geo.width(), geo.height())
-        self.show()
+        self.showFullScreen()
         self.raise_()
         self.activateWindow()
+        self.setFocus()
 
-    def mouseMoveEvent(self, event):
-        pos = event.globalPosition()
+    def handle_mouse_move(self, global_pos: QPointF):
+        # 300ms grace period on open to prevent accidental closing
+        if time.perf_counter() - self.opened_at < 0.3:
+            self.initial_mouse_pos = global_pos
+            return
+
         if self.initial_mouse_pos is None:
-            self.initial_mouse_pos = pos
+            self.initial_mouse_pos = global_pos
             return
         
-        # Tính khoảng cách di chuyển để lọc rung bàn
-        dx = pos.x() - self.initial_mouse_pos.x()
-        dy = pos.y() - self.initial_mouse_pos.y()
+        dx = global_pos.x() - self.initial_mouse_pos.x()
+        dy = global_pos.y() - self.initial_mouse_pos.y()
         dist = math.sqrt(dx * dx + dy * dy)
         
         if dist > self.threshold:
-            logging.info(f"Phát hiện di chuyển chuột ({dist:.1f}px > {self.threshold}px) -> Thoát screensaver.")
+            logging.info(f"Mouse move detected ({dist:.1f}px > {self.threshold}px) -> Dismissing screensaver.")
             self.dismiss_callback()
 
-    def mousePressEvent(self, event):
-        logging.info("Phát hiện click chuột -> Thoát screensaver.")
+    def trigger_dismiss(self, reason: str):
+        if time.perf_counter() - self.opened_at < 0.2:
+            return
+        logging.info(f"{reason} -> Dismissing screensaver.")
         self.dismiss_callback()
+
+    def mouseMoveEvent(self, event):
+        self.handle_mouse_move(event.globalPosition())
+
+    def mousePressEvent(self, event):
+        self.trigger_dismiss("Mouse press detected")
 
     def keyPressEvent(self, event):
-        logging.info(f"Phát hiện nhấn phím ({event.key()}) -> Thoát screensaver.")
-        self.dismiss_callback()
+        self.trigger_dismiss("Key press detected")
 
     def wheelEvent(self, event):
-        logging.info("Phát hiện cuộn chuột -> Thoát screensaver.")
-        self.dismiss_callback()
+        self.trigger_dismiss("Wheel scroll detected")
+
+
+class GlobalScreensaverFilter(QObject):
+    """Global event filter to guarantee any input closes the screensaver."""
+
+    def __init__(self, dismiss_callback, threshold: float):
+        super().__init__()
+        self.dismiss_callback = dismiss_callback
+        self.threshold = threshold
+        self.opened_at = time.perf_counter()
+        self.initial_pos = QCursor.pos()
+
+    def eventFilter(self, watched, event):
+        etype = event.type()
+        if etype in (QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
+            if time.perf_counter() - self.opened_at >= 0.2:
+                logging.info(f"Global event filter caught {etype} -> Dismissing.")
+                self.dismiss_callback()
+                return True
+
+        elif etype == QEvent.Type.MouseMove:
+            if time.perf_counter() - self.opened_at >= 0.3:
+                pos = QCursor.pos()
+                dx = pos.x() - self.initial_pos.x()
+                dy = pos.y() - self.initial_pos.y()
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > self.threshold:
+                    logging.info(f"Global event filter caught MouseMove ({dist:.1f}px) -> Dismissing.")
+                    self.dismiss_callback()
+                    return True
+        return False
 
 
 class ScreensaverManager:
-    """Quản lý các cửa sổ Screensaver trên tất cả các màn hình."""
+    """Manages screensaver windows across all connected monitors."""
 
     def __init__(self, config: dict):
         self.config = config
         self.windows: List[ScreensaverWindow] = []
         self.is_active = False
+        self.global_filter: Optional[GlobalScreensaverFilter] = None
+        self.cursor_check_timer: Optional[QTimer] = None
+        self.start_cursor_pos = QCursor.pos()
+        self.opened_time = 0.0
 
     def start(self):
         if self.is_active:
             return
         
-        logging.info("Đang kích hoạt Screensaver trên tất cả màn hình...")
+        logging.info("Starting screensaver across all monitors...")
         self.is_active = True
+        self.opened_time = time.perf_counter()
+        self.start_cursor_pos = QCursor.pos()
         
-        # Chống tắt màn hình / Sleep
+        # Prevent Windows sleep
         power.prevent_sleep()
         
-        # Quét và phủ kín tất cả màn hình
+        # Install global application event filter
+        threshold = float(self.config.get("mouse_move_threshold", 15))
+        self.global_filter = GlobalScreensaverFilter(self.stop, threshold)
+        QApplication.instance().installEventFilter(self.global_filter)
+
+        # Safety polling timer for cursor position (ensures shake exits even if focus is lost)
+        self.cursor_check_timer = QTimer()
+        self.cursor_check_timer.timeout.connect(self._check_cursor_movement)
+        self.cursor_check_timer.start(50) # 50ms interval, negligible CPU
+        
+        # Cover all monitors
         screens = QApplication.screens()
         self.windows = []
         for screen in screens:
@@ -390,23 +480,51 @@ class ScreensaverManager:
             self.windows.append(win)
             win.show_on_screen()
 
+    def _check_cursor_movement(self):
+        if not self.is_active:
+            return
+        # 300ms grace period on initial launch
+        if time.perf_counter() - self.opened_time < 0.3:
+            self.start_cursor_pos = QCursor.pos()
+            return
+        
+        current_pos = QCursor.pos()
+        dx = current_pos.x() - self.start_cursor_pos.x()
+        dy = current_pos.y() - self.start_cursor_pos.y()
+        dist = math.sqrt(dx * dx + dy * dy)
+        
+        threshold = float(self.config.get("mouse_move_threshold", 15))
+        if dist > threshold:
+            logging.info(f"Cursor poll detected physical mouse movement ({dist:.1f}px) -> Dismissing.")
+            self.stop()
+
     def stop(self):
         if not self.is_active:
             return
         
-        logging.info("Đang đóng Screensaver và nhả tài nguyên...")
+        logging.info("Stopping screensaver and releasing resources...")
         self.is_active = False
         
+        if self.cursor_check_timer:
+            self.cursor_check_timer.stop()
+            self.cursor_check_timer = None
+
+        if self.global_filter:
+            try:
+                QApplication.instance().removeEventFilter(self.global_filter)
+            except Exception:
+                pass
+            self.global_filter = None
+
         for win in self.windows:
             try:
                 win.close()
             except Exception as e:
-                logging.error(f"Lỗi khi đóng window: {e}")
+                logging.error(f"Error closing screensaver window: {e}")
         self.windows.clear()
         
-        # Trả lại quyền Sleep cho Windows
+        # Allow Windows sleep
         power.allow_sleep()
         
-        # Khôi phục con trỏ chuột
         QApplication.restoreOverrideCursor()
-        logging.info("Screensaver đã đóng hoàn toàn, ứng dụng về chế độ ngủ sâu.")
+        logging.info("Screensaver closed. Application returned to deep idle stealth mode.")

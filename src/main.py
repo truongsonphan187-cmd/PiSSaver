@@ -1,6 +1,6 @@
 """
-Điểm khởi động chính của ứng dụng PiSSaver.
-Khởi tạo Single Instance Mutex, System Tray và chạy ngầm 0% CPU.
+Main entry point for the PiSSaver application.
+Initializes Single Instance Mutex, System Tray, and runs in deep idle stealth mode (0.0% CPU).
 """
 
 import os
@@ -8,7 +8,7 @@ import sys
 import ctypes
 import logging
 
-# Đảm bảo đường dẫn import luôn hoạt động chính xác
+# Ensure correct import paths
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _parent_dir = os.path.dirname(_current_dir)
 if _parent_dir not in sys.path:
@@ -24,7 +24,7 @@ from src.tray import SystemTrayManager
 
 
 def ensure_single_instance():
-    """Đảm bảo chỉ có duy nhất một tiến trình PiSSaver chạy ngầm dưới System Tray."""
+    """Ensure only one instance of PiSSaver runs in the background."""
     mutex_name = "Global\\PiSSaver_SingleInstance_UniqueMutex_2026"
     ERROR_ALREADY_EXISTS = 183
     
@@ -33,14 +33,13 @@ def ensure_single_instance():
     last_error = kernel32.GetLastError()
     
     if last_error == ERROR_ALREADY_EXISTS:
-        logging.warning("Một phiên bản của PiSSaver đã đang chạy dưới System Tray!")
-        # Đã có app chạy, thoát instance thứ hai
+        logging.warning("An instance of PiSSaver is already running in the System Tray.")
         sys.exit(0)
     return handle
 
 
 def main():
-    # Cấu hình logging
+    # Setup file and console logging
     log_dir = os.path.join(get_app_dir(), "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "pis_saver.log")
@@ -53,31 +52,28 @@ def main():
             logging.StreamHandler(sys.stdout)
         ]
     )
-    logging.info("=== Khởi động PiSSaver ===")
+    logging.info("=== Starting PiSSaver ===")
 
-    # Giữ Mutex tránh chạy trùng lặp
+    # Hold Mutex to prevent duplicate processes
     _mutex_handle = ensure_single_instance()
 
-    # Khởi tạo Qt Application
+    # Initialize Qt Application
     app = QApplication(sys.argv)
     
-    # Quan trọng: Không thoát app khi các cửa sổ screensaver đóng lại!
-    # App phải tiếp tục sống ngầm dưới System Tray.
+    # Keep application running in background when screensaver windows close
     app.setQuitOnLastWindowClosed(False)
 
-    # Nạp cấu hình
+    # Load configuration
     config = load_config()
 
-    # Khởi tạo Quản lý Screensaver
+    # Initialize Managers
     screensaver_mgr = ScreensaverManager(config)
-
-    # Khởi tạo Quản lý Khay hệ thống (System Tray)
     tray_mgr = SystemTrayManager(screensaver_mgr, config)
     tray_mgr.show()
 
-    logging.info("PiSSaver đã sẵn sàng dưới System Tray. Trạng thái CPU = 0.0%.")
+    logging.info("PiSSaver is ready in the System Tray. Idle CPU usage: 0.0%.")
 
-    # Bắt đầu vòng lặp sự kiện
+    # Enter main event loop
     sys.exit(app.exec())
 
 

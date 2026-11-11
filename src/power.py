@@ -1,12 +1,12 @@
 """
-Module quản lý trạng thái nguồn Windows (Power Management).
-Ngăn chặn màn hình tắt hoặc hệ thống rơi vào trạng thái Sleep/Hibernate khi screensaver đang chạy.
+Windows Power Management module.
+Prevents display sleep and system idle sleep while screensaver is active.
 """
 
 import ctypes
 import logging
 
-# Các cờ Windows API SetThreadExecutionState
+# Windows API SetThreadExecutionState flags
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 ES_DISPLAY_REQUIRED = 0x00000002
@@ -14,31 +14,31 @@ ES_DISPLAY_REQUIRED = 0x00000002
 
 def prevent_sleep():
     """
-    Kích hoạt chế độ thức liên tục:
-    Ngăn Windows tắt màn hình và ngăn hệ thống vào Sleep.
+    Enable continuous keep-awake mode:
+    Prevents display turn-off and system sleep/hibernate.
     """
     try:
         res = ctypes.windll.kernel32.SetThreadExecutionState(
             ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
         )
         if res == 0:
-            logging.warning("Không thể thiết lập SetThreadExecutionState để ngăn sleep.")
+            logging.warning("Unable to set SetThreadExecutionState to prevent sleep.")
         else:
-            logging.info("Đã kích hoạt ngăn Windows tắt màn hình và sleep.")
+            logging.info("Windows sleep prevention activated (Display & System stay awake).")
     except Exception as e:
-        logging.error(f"Lỗi khi gọi prevent_sleep: {e}")
+        logging.error(f"Error calling prevent_sleep: {e}")
 
 
 def allow_sleep():
     """
-    Hủy bỏ chế độ thức:
-    Trả lại quyền quản lý năng lượng cho Windows theo mặc định.
+    Restore default power management:
+    Allows Windows to sleep and turn off display normally.
     """
     try:
         res = ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
         if res == 0:
-            logging.warning("Không thể thiết lập SetThreadExecutionState về mặc định.")
+            logging.warning("Unable to restore SetThreadExecutionState to default.")
         else:
-            logging.info("Đã nhả quyền kiểm soát nguồn, Windows có thể sleep bình thường.")
+            logging.info("Default Windows power state restored.")
     except Exception as e:
-        logging.error(f"Lỗi khi gọi allow_sleep: {e}")
+        logging.error(f"Error calling allow_sleep: {e}")
